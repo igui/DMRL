@@ -4,8 +4,9 @@ import tensorflow as tf
 import toolz
 from evaluator20 import RecallEvaluator
 from sampler import WarpSampler
-import Dataset1 as Dataset
-from tensorflow.contrib.layers.python.layers import regularizers
+import Dataset as Dataset
+# import Dataset1 as Dataset
+# from tensorflow.contrib.layers.python.layers import regularizers
 import scipy as sp
 import os, sys
 import argparse
@@ -300,7 +301,6 @@ class DMRL(object):
                 tf.assign(self.item_embeddings, tf.clip_by_norm(self.item_embeddings, 1.0, axes=[1]))]
     @define_scope
     def optimize(self):
-     
         return tf.train.AdamOptimizer(self.master_learning_rate).minimize(self.loss, var_list=[self.user_embeddings, self.item_embeddings])
 
     @define_scope
@@ -444,7 +444,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Run DMRL.')
     parser.add_argument('--dataset', nargs='?',default='Office', help='Choose a dataset.')
     parser.add_argument('--epochs', type=int,default=1000, help = 'total_epochs')
-    parser.add_argument('--gpu', nargs='?',default='1', help = 'gpu_id')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='learning_rate.')
     parser.add_argument('--decay_r', type=float, default=1e-2, help='decay_r.')
     parser.add_argument('--decay_c', type=float, default=1e-0, help='decay_c.')
@@ -474,7 +473,6 @@ if __name__ == '__main__':
     train_num = dataset.train_num
     # create warp sampler
     sampler = WarpSampler(train, batch_size=args.batch_size, n_negative=args.num_neg, check_negative=True)
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     model = DMRL(n_users,
                 n_items,
                 # enable feature projection

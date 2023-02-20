@@ -1,0 +1,8 @@
+numpy
+scipy
+pandas
+protobuf<=3.21
+tensorflow==1.15
+toolz
+scikit-learn
+gensim

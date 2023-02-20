@@ -1,0 +1,10 @@
+# Python generated files
+__pycache__
+.venv
+
+# Datasets (usually users have to download them separately)
+Data
+
+
+# Configuration files
+.envrc

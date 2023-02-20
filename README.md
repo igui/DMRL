@@ -6,6 +6,19 @@ Fan Liu*, Huilin Chen, Zhiyong Cheng, Anan Liu, Liqiang Nie, Mohan Kankanhalli. 
 
 **Please cite our paper if you use our codes or datasets. Thanks!**
 
+### Requirements
+
+- CUDA 10.0
+- Python 3.7
+
+To run first download a full dataset (see below). For example,
+
+```
+$ pip install -r requirements.txt
+# Adjust the batch size depending on your GPU memory capabilities
+$ python DMRL.py --dataset Clothing  --batch_size=64
+```
+
 ### Dataset
 We provide five processed datasets: Amazon-Office, Amazon-Clothing, Amazon-Baby, Amazon-ToysGames, Amazon-Sports.
 

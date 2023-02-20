@@ -1,12 +1,13 @@
 '''
 Created on Aug 8, 2016
-Processing datasets. 
+Processing datasets.
 
 @author: Xiangnan He (xiangnanhe@gmail.com)
 '''
 import scipy.sparse as sp
 import numpy as np
 import pandas as pd
+import os
 
 class Dataset(object):
     '''
@@ -45,8 +46,7 @@ class Dataset(object):
         return mat, num_total
 
     def load_features(self,data_path):
-        import os
-        from gensim.models.doc2vec import Doc2Vec
+        # from gensim.models.doc2vec import Doc2Vec
         # Prepare textual feture data.
         #doc2vec_model = Doc2Vec.load(os.path.join(data_path, 'doc2vecFile'))
         doc2vec_model = np.load(os.path.join(data_path, 'review.npz'), allow_pickle=True)['arr_0'].item()
