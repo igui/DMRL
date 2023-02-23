@@ -8,16 +8,20 @@ Fan Liu*, Huilin Chen, Zhiyong Cheng, Anan Liu, Liqiang Nie, Mohan Kankanhalli. 
 
 ### Requirements
 
-- CUDA 10.0
 - Python 3.7
+- CUDA 10.0
+- Tensorflow 1.15
 
-To run first download a full dataset (see below). For example,
+To run first download a full dataset (see below). For example, download the
+Clothing one and store it in Data/Clothing. The files in the Git
+repository do not have image or textual features.
 
 ```
 $ pip install -r requirements.txt
-# Adjust the batch size depending on your GPU memory capabilities
-$ python DMRL.py --dataset Clothing  --batch_size=64
+$ python DMRL.py --dataset Clothing
 ```
+
+This process takes around 5 hours in a GTX 2060 with 6GB of RAM.
 
 ### Dataset
 We provide five processed datasets: Amazon-Office, Amazon-Clothing, Amazon-Baby, Amazon-ToysGames, Amazon-Sports.
