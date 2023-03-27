@@ -43,7 +43,7 @@ class RecallEvaluator(object):
         precisions = []
         hit_ratios = []
         ndcgs = []
-        user_tops,scores_s,scores_w = sess.run(self.model.item_scores,
+        user_tops, _scores_s, _scores_w = sess.run(self.model.item_scores,
                                 {self.model.score_user_ids: users})
 
         user_batch_rating_uid = zip(users,user_tops)

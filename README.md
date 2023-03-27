@@ -8,13 +8,16 @@ Fan Liu*, Huilin Chen, Zhiyong Cheng, Anan Liu, Liqiang Nie, Mohan Kankanhalli. 
 
 ### Requirements
 
-- Python 3.7
-- CUDA 10.0
-- Tensorflow 1.15
+- [Python 3.7](https://www.python.org/downloads/release/python-379/)
+- [CUDA 10.0](https://developer.nvidia.com/cuda-10.0-download-archive)
+- [cuDNN v7.6.5 for CUDA 10.0](https://developer.nvidia.com/rdp/cudnn-archive)
+- [Tensorflow 1.15](https://www.tensorflow.org/versions/r1.15/api_docs/python/tfq)
 
 To run first download a full dataset (see below). For example, download the
 Clothing one and store it in Data/Clothing. The files in the Git
 repository do not have image or textual features.
+
+For example, download them into $$
 
 ```
 $ pip install -r requirements.txt

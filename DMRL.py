@@ -1,8 +1,10 @@
 import functools
+from pathlib import Path
 import numpy as np
 import tensorflow as tf
 import toolz
 from evaluator20 import RecallEvaluator
+from evaluator2 import Evaluator
 from sampler import WarpSampler
 import Dataset as Dataset
 # import Dataset1 as Dataset
@@ -396,7 +398,8 @@ def optimize(model, sampler, train, train_num, test):
             losses+=loss
         t2 = time()
 
-        testresult = RecallEvaluator(model, train, test)
+        #testresult = RecallEvaluator(model, train, test)
+        testresult = Evaluator(model, train, test)
         test_recalls = []
         test_ndcg = []
         test_hr = []
@@ -444,6 +447,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Run DMRL.')
     parser.add_argument('--dataset', nargs='?',default='Office', help='Choose a dataset.')
     parser.add_argument('--epochs', type=int,default=1000, help = 'total_epochs')
+    parser.add_argument('--embed_dim', type=int, default=128, help='Embedding dimension')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='learning_rate.')
     parser.add_argument('--decay_r', type=float, default=1e-2, help='decay_r.')
     parser.add_argument('--decay_c', type=float, default=1e-0, help='decay_c.')
@@ -464,7 +468,21 @@ if __name__ == '__main__':
     # make feature as dense matrix
     args = parse_args()
     Filename = args.dataset
-    Filepath = 'Data/' + Filename
+    Filepath = Path('Data') / Filename
+
+    parameters = [
+        'dataset','epochs','embed_dim','learning_rate',
+        'decay_r','decay_c','decay_p',
+        'batch_size','n_factors','num_neg',
+        'hidden_layer_dim_a','hidden_layer_dim_b',
+        'dropout_a','dropout_b'
+    ]
+    print("Parameters")
+    print("======================================")
+    for param in parameters:
+        print(f'{param:20} {getattr(args, param)}')
+    print("======================================")
+
     # get train/valid/test user-item matrices
     dataset = Dataset.Dataset(Filepath)
     train, test = dataset.trainMatrix, dataset.testRatings
@@ -478,7 +496,7 @@ if __name__ == '__main__':
                 # enable feature projection
                 imagefeatures=imagefeatures,
                 textualfeatures=textualfeatures,
-                embed_dim=128,
+                embed_dim=args.embed_dim,
                 batch_size=args.batch_size,
                 master_learning_rate=args.learning_rate,
                 # the size of the hidden layer in the feature projector NN
