@@ -1,60 +1,68 @@
-from time import perf_counter
+from typing import NamedTuple, Optional
 import numpy as np
 from numpy.typing import NDArray
+from tqdm.auto import tqdm
+
+class EvalResult(NamedTuple):
+    recall: NDArray[np.floating]
+    ndcg: NDArray[np.floating]
+    hitrate: NDArray[np.floating]
+    precision: NDArray[np.floating]
 
 class Evaluator(object):
-    def __init__(self, model, train, test, k=20):
+    def __init__(self, train, test, k=20):
         """
         Create a evaluator for recall@K evaluation
-        :param model: the model we are going to evaluate
         :param train_user_item_matrix: the user-item pairs used in the training set. These pairs will be ignored
                in the calculations
         :param test_user_item_matrix: the held-out user-item pairs we make prediction against
         """
-        self.model = model
-        self.train_matrix = train.toarray()
-        self.test_matrix = test.toarray()
+        self.train_matrix = train
+        self.test_matrix = test
         self.k = k
 
+    def eval(self,
+        user_scores: NDArray[np.floating],
+        user_idxs: NDArray[np.integer]
+    ) -> EvalResult:
+        train = self.train_matrix[user_idxs, :].toarray()
+        labels = self.test_matrix[user_idxs, :].toarray()
 
-    def eval(self, sess, users):
-        """
-        Compute the Top-K recall for a particular user given the predicted scores to items
-        :param users: the users to eval the recall
-        :param k: compute the recall for the top K items
-        :return: hitratio,ndgg@K
-        """
-        t1 = perf_counter()
-        user_scores,_scores_s,_scores_w = sess.run(self.model.item_scores,
-                                {self.model.score_user_ids: users})
-        t2 = perf_counter()
-
-        # Ignore logits for training labels
-        train = self.train_matrix[users, :]
-        labels = self.test_matrix[users, :]
-
+        # Set user scores in the train set as -inf to avoid evaluating the
+        # model on items it was trained on.
+        # Alternatively we can set the labels for the items in the test set
+        # to zero
         fixed_scores = np.where(train == 0, user_scores, -np.inf)
-        common_args = { 'scores': fixed_scores, 'labels': labels, 'k': self.k }
+        top_scores_idxs = find_ktop(fixed_scores, self.k)
 
-        recalls = recall_at_k(**common_args)
-        ndcgs = ndcg_at_k(**common_args)
-        hitrates = hitrate_at_k(**common_args)
-        precisions = precision_at_k(**common_args)
-        t3 = perf_counter()
+        common_args = {
+            # Ignore logits for training labels
+            'scores': fixed_scores,
+            'labels': labels,
+            'k': self.k,
+            'top_scores_idxs': top_scores_idxs
+        }
 
-        #print(f'Model Eval {t2 - t1:.2f}s Metric Eval {t3-t2:.2f}s')
+        return EvalResult(
+            recall=recall_at_k(**common_args),
+            ndcg=ndcg_at_k(**common_args),
+            hitrate=hitrate_at_k(**common_args),
+            precision=precision_at_k(**common_args)
+        )
 
-        return recalls, ndcgs, hitrates, precisions
-
+def find_ktop(a: NDArray, k: int):
+    return np.argpartition(a, axis=1, kth=-k)[:, -k-1:-1]
 
 def measure_at_k(
     scores: NDArray[np.floating],
     labels: NDArray[np.floating],
-    k: int
+    k: int,
+    top_scores_idxs: Optional[NDArray[np.floating]] = None,
 ) -> float:
     assert scores.shape == labels.shape
 
-    top_scores_idxs = np.fliplr(np.argsort(scores, axis=1))[:, :k]
+    if top_scores_idxs is None:
+        top_scores_idxs = find_ktop(scores, k)
 
     binarized_labels = (labels > 0)
     binarized_scores = (scores > 0)
@@ -73,40 +81,47 @@ def measure_at_k(
 def recall_at_k(
     scores: NDArray[np.floating],
     labels: NDArray[np.floating],
-    k: int
+    k: int,
+    top_scores_idxs: Optional[NDArray[np.floating]] = None,
 ) -> float:
-    true_positives, relevant,  _ = measure_at_k(scores, labels, k)
+    true_positives, relevant,  _ = measure_at_k(scores, labels, k, top_scores_idxs)
     return true_positives / np.maximum(relevant, 1)
 
 
 def hitrate_at_k(
     scores: NDArray[np.floating],
     labels: NDArray[np.floating],
-    k: int
+    k: int,
+    top_scores_idxs: Optional[NDArray[np.floating]] = None,
 ) -> float:
-    true_positives_sum, *_  = measure_at_k(scores, labels, k)
-    return (true_positives_sum > 0).astype(float)
+    true_positives, *_  = measure_at_k(scores, labels, k, top_scores_idxs)
+    return (true_positives > 0).astype(float)
 
 
 def precision_at_k(
     scores: NDArray[np.floating],
     labels: NDArray[np.floating],
-    k: int
+    k: int,
+    top_scores_idxs: Optional[NDArray[np.floating]] = None,
 ) -> float:
-    true_positives, _,  retrieved = measure_at_k(scores, labels, k)
+    true_positives, _,  retrieved = measure_at_k(scores, labels, k, top_scores_idxs)
     return true_positives / np.maximum(retrieved, 1)
 
 
 def ndcg_at_k(
     scores: NDArray[np.floating],
     labels: NDArray[np.floating],
-    k: int
+    k: int,
+    top_scores_idxs: Optional[NDArray[np.floating]] = None,
 ) -> float:
     assert scores.shape == labels.shape
 
     binarized_labels = (labels > 0)
-    top_scores_idxs = np.fliplr(np.argsort(scores, axis=1))[:, :k]
-    top_labels_idxs = np.fliplr(np.argsort(binarized_labels, axis=1))[:, :k]
+
+    if top_scores_idxs is None:
+        top_scores_idxs = find_ktop(scores, k)
+
+    top_labels_idxs = find_ktop(labels, k)
 
     row_idxs, _ = np.indices(top_scores_idxs.shape)
 

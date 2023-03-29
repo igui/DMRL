@@ -1,18 +1,18 @@
+import argparse
+from concurrent.futures import Future, ThreadPoolExecutor
 import functools
+import math
 from pathlib import Path
+from typing import NamedTuple, Optional
 import numpy as np
 import tensorflow as tf
 import toolz
-from evaluator20 import RecallEvaluator
+from tqdm.auto import tqdm
 from evaluator2 import Evaluator
 from sampler import WarpSampler
 import Dataset as Dataset
-# import Dataset1 as Dataset
-# from tensorflow.contrib.layers.python.layers import regularizers
-import scipy as sp
-import os, sys
-import argparse
-from time import time
+from time import perf_counter
+
 
 def doublewrap(function):
     """
@@ -364,6 +364,30 @@ def early_stopping(log_value, best_value, stopping_step, expected_order='acc', f
         should_stop = False
     return best_value, stopping_step, should_stop
 
+
+class Metrics(NamedTuple):
+    recall: float
+    precision: float
+    hit_rate: float
+    ndcg: float
+
+    def __str__(self) -> str:
+        return (f"recall:{self.recall:.5f}, pres:{self.precision:.5f}, "
+                f"hr:{self.hit_rate:.5f}, ndcg:{self.ndcg:.5f}")
+
+
+def write_results(epoch: int, user_scores, metrics: Metrics):
+    t1 = perf_counter()
+    best_scores_path = Path('Data') / args.dataset / 'best_scores.npz'
+    np.savez(best_scores_path, user_scores)
+    best_metrics_path = Path('Data') / args.dataset / 'best_metrics.txt'
+    with open(best_metrics_path, 'w') as best_metrics_file:
+        best_metrics_file.write(
+            f'best_metrics {epoch + 1}: {metrics}',
+        )
+    t2 = perf_counter()
+    return t2 - t1
+
 def optimize(model, sampler, train, train_num, test):
     """
     Optimize the model. TODO: implement early-stopping
@@ -377,71 +401,91 @@ def optimize(model, sampler, train, train_num, test):
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
-    # all test users to calculate recall validation
-    test_users = np.asarray(list(set(test.nonzero()[0])),dtype=np.int32)
+
+    # Because we want metrics for all involved users
+    assert train.shape == test.shape
+    test_users = np.arange(train.shape[0])
+
+
     EVALUATION_EVERY_N_BATCHES = train_num // args.batch_size + 1
-    cur_best_pre_0 = 0.
-    pre_loger, rec_loger, ndcg_loger, hit_loger = [], [], [], []
+    best_recall = 0.
+    best_metrics = None
     stopping_step = 0
+    write_results_future: Optional[Future] = None
 
-    for epoch in range(args.epochs):
-        t1 = time()
-        # TODO: early stopping based on validation recall
-        # train model
-        losses =0
-        # run n mini-batches
-        for _ in range(10*EVALUATION_EVERY_N_BATCHES):
-            user_pos, neg = sampler.next_batch()
-            _, loss = sess.run((model.optimize, model.loss),
-                               {model.user_positive_items_pairs: user_pos,
-                                model.negative_samples: neg})
-            losses+=loss
-        t2 = time()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        for epoch in range(args.epochs):
+            # TODO: early stopping based on validation recall
+            # train model
+            losses = 0
+            # run n mini-batches
+            for _ in tqdm(
+                range(10*EVALUATION_EVERY_N_BATCHES),
+                desc=f'Epoch {epoch+1} Train',
+                total=10*EVALUATION_EVERY_N_BATCHES,
+                unit='batch'
+            ):
+                user_pos, neg = sampler.next_batch()
+                _, loss = sess.run((model.optimize, model.loss),
+                                {model.user_positive_items_pairs: user_pos,
+                                    model.negative_samples: neg})
+                losses+=loss
+            testresult = Evaluator(train, test)
+            user_scores = [
+                sess.run(model.item_scores, {model.score_user_ids: user_chunk})[0]
+                for user_chunk in tqdm(
+                    toolz.partition_all(20, test_users),
+                    desc=f'Epoch {epoch+1} Eval ',
+                    total=math.ceil(len(test_users) / 20.0),
+                    unit='chunk'
+                )
+            ]
+            evals = [
+                testresult.eval(user_scores[idx], user_chunk)
+                for idx, user_chunk in tqdm(
+                    enumerate(toolz.partition_all(20, test_users)),
+                    desc=f'Epoch {epoch+1} Test ',
+                    total=math.ceil(len(test_users) / 20.0),
+                    unit='chunk'
+                )
+            ]
+            epoch_metrics = Metrics(
+                recall=np.concatenate([ e.recall for e in evals ]).mean(),
+                precision=np.concatenate([ e.precision for e in evals ]).mean(),
+                hit_rate=np.concatenate([ e.hitrate for e in evals ]).mean(),
+                ndcg=np.concatenate([ e.ndcg for e in evals ]).mean()
+            )
+            train_loss = losses/(10*EVALUATION_EVERY_N_BATCHES)
+            print(f"Epoch {epoch+1} Train loss={train_loss:.5f} Metrics={epoch_metrics}")
 
-        #testresult = RecallEvaluator(model, train, test)
-        testresult = Evaluator(model, train, test)
-        test_recalls = []
-        test_ndcg = []
-        test_hr = []
-        test_pr = []
+            best_recall, stopping_step, should_stop = early_stopping(
+                epoch_metrics.recall,
+                best_recall,
+                stopping_step,
+                expected_order='acc',
+                flag_step=5
+            )
+            if best_recall == epoch_metrics.recall:
+                best_metrics = epoch_metrics
+                if write_results_future and write_results_future.running():
+                    print("Already running! :(")
+                else:
+                    write_results_future = executor.submit(
+                        write_results,
+                        epoch,
+                        user_scores,
+                        epoch_metrics
+                    )
+                    write_results_future.add_done_callback(
+                        lambda x: print(f'Wrote results in {x.result():.2f}s')
+                    )
 
-        for user_chunk in toolz.partition_all(20, test_users):
-            recalls, ndcgs, hit_ratios, precisions = testresult.eval(sess, user_chunk)
-            test_recalls.extend(recalls)
-            test_ndcg.extend(ndcgs)
-            test_hr.extend(hit_ratios)
-            test_pr.extend(precisions)
+            if should_stop == True:
+                break
 
-        recalls = sum(test_recalls)/float(len(test_recalls))
-        precisions = sum(test_pr)/float(len(test_pr))
-        hit_ratios = sum(test_hr)/float(len(test_hr))
-        ndcgs = sum(test_ndcg)/float(len(test_ndcg))
+    sampler.close()
 
-        rec_loger.append(recalls)
-        pre_loger.append(precisions)
-        ndcg_loger.append(ndcgs)
-        hit_loger.append(hit_ratios)
-
-        t3 = time()
-        print("epochs%d  [%.1fs + %.1fs]: train loss=%.5f, result=recall:%.5f, pres:%.5f, hr:%.5f, ndcg:%.5f"%(epoch, t2 - t1, t3 - t2, losses/(10*EVALUATION_EVERY_N_BATCHES), recalls,precisions,hit_ratios,ndcgs))
-
-        cur_best_pre_0, stopping_step, should_stop = early_stopping(recalls, cur_best_pre_0,stopping_step, expected_order='acc', flag_step=5)
-
-        if should_stop == True:
-            sampler.close()
-            break
-        if epoch == args.epochs - 1:
-            sampler.close()
-
-    recs = np.array(rec_loger)
-    pres = np.array(pre_loger)
-    ndcgs = np.array(ndcg_loger)
-    hit = np.array(hit_loger)
-
-    best_rec_0 = max(recs)
-    idx = list(recs).index(best_rec_0)
-    final_perf = "Best Iter = recall:%.5f, pres:%.5f, hr:%.5f, ndcg:%.5f"%(recs[idx], pres[idx], hit[idx], ndcgs[idx])
-    print(final_perf)
+    print(f"Best Iter = {best_metrics}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Run DMRL.')
