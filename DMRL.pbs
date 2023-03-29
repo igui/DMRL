@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#PBS -l nodes=1:ppn=9:gpus=1:skylake
+#PBS -l partition=gpu
+#PBS -l walltime=06:00:00
+#PBS -l pmem=2gb
+#PBS -A default_project
+
+# Exit on errors :)
+set -e
+
+cd ~/DMRL
+
+echo "Exporting variables"
+export LD_LIBRARY_PATH="${VSC_DATA}/cuda-10.0/lib64:${LD_LIBRARY_PATH}"
+export PATH="${VSC_DATA}/cuda-10.0/bin:${PATH}"
+
+echo "Activating conda"
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$(conda 'shell.bash' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "${VSC_DATA}/miniconda3/etc/profile.d/conda.sh" ]; then
+        . "${VSC_DATA}/miniconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="${VSC_DATA}/miniconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+echo "Activating conda environment"
+conda activate dmrl 
+
+echo "Checking for GPU in Tensorflow"
+echo 'import tensorflow as tf; print(tf.test.is_gpu_available())' | python
+
+echo "Running nvidia-smi monitor"
+nvidia-smi --query-gpu=timestamp,name,pci.bus_id,driver_version,pstate,pcie.link.gen.max,pcie.link.gen.current,temperature.gpu,utilization.gpu,utilization.memory,memory.total,memory.free,memory.used  --format=csv -l 5 &
+
+echo "Running mpstat for CPU monitoring"
+mpstat 5 &
+
+echo "Executing!"
+python DMRL.py --dataset=Clothing-Custom
+
+echo "Exiting"
+exit 0
