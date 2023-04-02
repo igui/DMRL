@@ -5,7 +5,10 @@ __pycache__
 # Datasets (usually users have to download them separately)
 Data
 
-
 # Configuration files
 .envrc
 .vscode
+
+# VSC output files
+DMRL.pbs.e*
+DMRL.pbs.o*
