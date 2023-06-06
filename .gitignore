@@ -9,6 +9,4 @@ Data
 .envrc
 .vscode
 
-# VSC output files
-DMRL.pbs.e*
-DMRL.pbs.o*
+

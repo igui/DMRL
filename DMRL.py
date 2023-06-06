@@ -12,6 +12,7 @@ from evaluator2 import Evaluator
 from sampler import WarpSampler
 import Dataset as Dataset
 from time import perf_counter
+import analyze_recommendations
 
 
 def doublewrap(function):
@@ -553,3 +554,8 @@ if __name__ == '__main__':
                 )
 
     optimize(model, sampler, train, train_num, test)
+
+    results_path: Path = (Filepath / 'best_scores.npz')
+    analyze_recommendations.main(results_path, Filepath)
+    # Remove later
+    results_path.unlink()
